@@ -1,0 +1,102 @@
+{
+    "NAME": "HToAATo4B",
+    "GLOBAL": {
+        "help": "The GLOBAL object contains meta information regarding the location, filenames, and input histogram names for all ROOT files used in the background estimation procedure. As well, the SIGNAME list should include the name(s) of all signals you wish to investigate.",
+        "FILE": "$process.root",
+        "FILE_UP": "$process.root",
+        "FILE_DOWN": "$process.root",
+        "HIST": "hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_$region",
+        "HIST_UP": "hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_$region$systup",
+        "HIST_DOWN": "hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_$region$systdown",
+        "pathLPC": "/eos/cms/store/user/ssawant/htoaa/analysis/20240131_GGFMode_DataVsMC/2018/2DAlphabet_inputFiles",
+        "path": "/eos/cms/store/user/ssawant/htoaa/analysis/20240131_GGFMode_DataVsMC/2018/2DAlphabet_inputFiles",
+        "SIGNAME": ["SUSY_GluGluH_01J_HToAATo4B_M-35_HPtAbv150"]
+    },
+    "REGIONS": {
+        "Pass": {
+            "PROCESSES": ["TT", "Z", "W", "SIGNAME"],
+            "BINNING": "default"
+        },
+        "Fail": {
+                "PROCESSES": ["TT", "Z", "W", "SIGNAME"],
+                "BINNING": "default"
+        }
+    },
+    "PROCESSES": {
+        "data_obs": {
+            "SYSTEMATICS": [],
+            "SCALE": 1.0,
+            "COLOR": 1,
+            "TYPE": "DATA",
+            "TITLE": "Data",
+            "HELP": "since the data ROOT file is called TWpreselectionRun2_data_tau32medium_default.root, we need an alias to allow this to get picked up",
+            "ALIAS": "Run2_data",
+            "LOC": "path/FILE:HIST"
+        },
+        "SIGNAME": {
+            "SYSTEMATICS":["lumi"],
+            "SCALE": 1.0, 
+            "COLOR": 1, 
+            "TYPE": "SIGNAL",
+            "TITLE": "HToAATo4B_M-35",
+            "LOC": "path/FILE:HIST"
+        },
+        "TT": {
+            "SYSTEMATICS": ["lumi"],
+            "SCALE": 1.0,
+            "COLOR": 2,
+            "TYPE": "BKG",
+            "TITLE": "t#bar{t}",
+            "LOC": "path/FILE:HIST"
+        },
+        "Z": {
+            "SYSTEMATICS": ["lumi"],
+            "SCALE": 1.0,
+            "COLOR": 2,
+            "TYPE": "BKG",
+            "TITLE": "Z",
+            "LOC": "path/FILE:HIST"
+        },
+        "W": {
+            "SYSTEMATICS": ["lumi"],
+            "SCALE": 1.0,
+            "COLOR": 861,
+            "TYPE": "BKG",
+            "TITLE": "W",
+            "LOC": "path/FILE:HIST"
+        }
+    },
+    "SYSTEMATICS": {
+        "lumi": {
+            "CODE": 0,
+            "VAL": 1.018
+        }
+    },
+    "BINNING": {
+        "default": {
+            "X": {
+            "NAME": "mH",
+            "TITLE": "m_{H} [GeV}",
+            "MIN": 0,
+            "MAX": 300,
+            "NBINS": 30,
+            "SIGSTART": 100,
+            "SIGEND": 140
+            },
+            "Y": {
+            "NAME": "mA",
+            "TITLE": "m_{A} [GeV]",
+            "MIN": 0,
+            "MAX": 70,
+            "NBINS": 35
+            }
+        }
+    },
+    "OPTIONS": {
+        "blindedPlots": [],
+        "blindedFit": [],
+        "plotUncerts": false,
+        "plotTitles": false,
+        "year": 1
+    }
+}

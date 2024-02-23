@@ -6,6 +6,7 @@ from TwoDAlphabet.helpers import make_env_tarball
 import ROOT
 import os
 import numpy as np
+import argparse
 
 # for b*, the P/F regions are named MtwvMtPass and MtwvMtFail
 # so, just need to find and replace Pass/Fail depending on which region we want
@@ -48,7 +49,7 @@ def _select_signal(row, args):
     else:
         return True
 
-def make_workspace():
+def make_workspace(sTrFcOrder = '2x1'):
     '''
     Constructs the workspace for all signals listed in the "SIGNAME" list in the 
     "GLOBAL" object in the json config file. This allows for one complete workspace to be
@@ -61,7 +62,7 @@ def make_workspace():
     # is also saved as runConfig.json. This means, if you want to share your analysis with
     # someone, they can grab everything they need from this one spot - no need to have access to
     # the original files! (Note though that you'd have to change the config to point to organized_hists.root).
-    twoD = TwoDAlphabet('tWfits_2x1', 'bstar.json', loadPrevious=False)
+    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1.json', loadPrevious=False)
 
     # Create the data - BKGs histograms
     qcd_hists = twoD.InitQCDHists()
@@ -71,16 +72,20 @@ def make_workspace():
       We're nominally running on input histograms whose Pass/Fail criteria is based on a top tag using
       tau32 + subjet b tag (as opposed to DeepAK8 or ParticleNet taggers).
       Tau32 (and, to an extent, the subjet b tag) are very correlated with m_top and slightly correlated 
-      with m_tW such that the pass-fail ratio is not smooth at all. The correlations are complicated enough
+      with m_htoaato4b such that the pass-fail ratio is not smooth at all. The correlations are complicated enough
       that the pass-fail ratio has very strange but distinct features. These features are modeled very well by 
       the MC, so the idea is to use the MC to describe the majority of this, and the larger leftover disagreements
       can be made up by a simple polynomial (line 118).
     '''
 
     # open the smooth QCD MC file and gather the pass/fail histograms
-    smooth_MC_file = ROOT.TFile.Open('/eos/user/c/cmsdas/2023/long-ex-b2g/rootfiles/smooth_QCD_run2.root')
-    smooth_MC_fail = smooth_MC_file.Get('out_fail_4_5_default_run2__mt_mtw')
-    smooth_MC_pass = smooth_MC_file.Get('out_pass_4_5_default_run2__mt_mtw')
+    #smooth_MC_file = ROOT.TFile.Open('/eos/user/c/cmsdas/2023/long-ex-b2g/rootfiles/smooth_QCD_run2.root')
+    #smooth_MC_fail = smooth_MC_file.Get('out_fail_4_5_default_run2__mt_mtw')
+    #smooth_MC_pass = smooth_MC_file.Get('out_pass_4_5_default_run2__mt_mtw')
+    smooth_MC_file = ROOT.TFile.Open('/eos/cms/store/user/ssawant/htoaa/analysis/20240131_GGFMode_DataVsMC/2018/2DAlphabet_inputFiles/QCD.root')
+    smooth_MC_fail = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Fail')
+    smooth_MC_pass = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Pass')
+    
     # create the pass fail ratio by dividing the pass histogram by the fail via ROOT
     smooth_MC_rpf = smooth_MC_pass.Clone()
     smooth_MC_rpf.Divide(smooth_MC_fail)
@@ -114,10 +119,20 @@ def make_workspace():
                     binning_f, constant=True
                 )
 
+        sFitPolynomial = ''
+        if     sTrFcOrder == '1x0':  sFitPolynomial = '@0+@1*x'
+        elif   sTrFcOrder == '0x1':  sFitPolynomial = '@0+@1*y'
+        elif   sTrFcOrder == '1x1':  sFitPolynomial = '(@0+@1*x)*(1+@2*y)'
+        elif   sTrFcOrder == '1x2':  sFitPolynomial = '(@0+@1*x)*(1+@2*y+@3*y*y)'
+        elif   sTrFcOrder == '2x1':  sFitPolynomial = '(@0+@1*x+@2*x**2)*(1+@3*y)'
+        elif   sTrFcOrder == '2x2':  sFitPolynomial = '(@0+@1*x+@2*x**2)*(1+@3*y+@4*y**2)'
+        elif   sTrFcOrder == '2x3':  sFitPolynomial = '(@0+@1*x+@2*x*x)*(1+@3*y+@4*y*y+@5*y*y*y)'
+
+
         # Next we'll book a 2x1 transfer function to transfer from Fail -> Pass
         qcd_rratio = ParametricFunction(
                         fail_name.replace('Fail','rratio'),
-                        binning_f, '(@0+@1*x+@2*x**2)*(1+@3*y)',
+                        binning_f, sFitPolynomial,
                         constraints= {0:{"MIN":-10, "MAX":10}}
                    )
 
@@ -136,7 +151,7 @@ def make_workspace():
     # save the workspace!
     twoD.Save()
 
-def ML_fit(signal):
+def ML_fit(signal, sTrFcOrder = '2x1'):
     '''
     signal [str] = any of the signal masses, as a string. 
     Masses range from [1400,4000], at 200 GeV intervals
@@ -149,14 +164,17 @@ def ML_fit(signal):
     '''
     print("ML_fit():: signal: ",signal)
 
-    # the default workspace directory, created in make_workspace(), is called tWfits_2x1/
-    twoD = TwoDAlphabet('tWfits_2x1', 'bstar.json', loadPrevious=True)
+    # the default workspace directory, created in make_workspace(), is called htoaato4bfits_2x1/
+    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1.json', loadPrevious=True)
 
     # Create a subset of the primary ledger using the select() method.
     # The select() method takes as a function as its first argument
     # and any args to pass to that function as the remiaining arguments
     # to select(). See _select_signal for how to construct the function.
-    subset = twoD.ledger.select(_select_signal, 'signalLH{}'.format(signal))
+    #subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
+    print("ML_fit():: signal: ", 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
+    print("ML_fit():: _select_signal: ", _select_signal)    
+    subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
 
     # Make card reads the ledger and creates a Combine card from it.
     # The second argument specifices the sub-directory to save the card in.
@@ -167,60 +185,63 @@ def ML_fit(signal):
     # workspace is desired. Additionally, a different dataset can be supplied via
     # toyData but this requires supplying almost the full Combine card line and
     # is reserved for quick hacks by those who are familiar with Combine cards.
-    twoD.MakeCard(subset, 'tW-{}_area'.format(signal))
+    twoD.MakeCard(subset, 'htoaato4b-{}_area'.format(signal))
 
     # Run the fit! Will run in the area specified by the `subtag` (ie. sub-directory) argument
     # and use the card in that area. Via the cardOrW argument, a different card or workspace can be
     # supplied (passed to the -d option of Combine).
-    twoD.MLfit('tW-{}_area'.format(signal),rMin=-1,rMax=20,verbosity=1,extra='--robustFit=1')
+    twoD.MLfit('htoaato4b-{}_area'.format(signal),rMin=-1,rMax=20,verbosity=1,extra='--robustFit=1')
 
-def plot_fit(signal):
+def plot_fit(signal, sTrFcOrder = '2x1'):
     '''
-    Plots the fits from ML_fit() using 2DAlphabet
+    Plots the fits from ML_fit() using 2DAlphabet 
     '''
-    twoD = TwoDAlphabet('tWfits_2x1', 'bstar.json', loadPrevious=True)
-    subset = twoD.ledger.select(_select_signal, 'signalLH{}'.format(signal))
-    twoD.StdPlots('tW-{}_area'.format(signal), subset)
+    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1.json', loadPrevious=True)
+    subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
+    twoD.StdPlots('htoaato4b-{}_area'.format(signal), subset)
 
-def plot_GoF(signal, tf='', condor=False):
+def plot_GoF(signal, tf='', condor=False, sTrFcOrder = '2x1'):
     '''
     Plot the Goodness of Fit as the measured saturated test statistic in data 
     compared against the distribution obtained from the toys. 
     '''
-    plot.plot_gof('tWfits_2x1{}'.format('_'+tf if tf != '' else ''), 'tW-{}_area'.format(signal), condor=condor)
+    # plot.plot_gof('tWfits_2x1{}'.format('_'+tf if tf != '' else ''), 'tW-{}_area'.format(signal), condor=condor)
+    #plot.plot_gof('htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else ''), 'htoaato4b-{}_area'.format(signal), condor=condor)
+    plot.plot_gof('htoaato4bfits_{}'.format(sTrFcOrder), 'htoaato4b-{}_area'.format(signal), condor=condor)
 
-def GoF(signal, tf='', nToys=500, condor=False):
+def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = '2x1'):
     '''
     Calculates the value of the saturated test statistic in data and compares to the 
     distribution obtained from 500 toys (by default).
     '''
-    # Load an existing workspace for a given TF parameterization (e.g., 'tWfits_2x1_1x1')
-    fitDir = 'tWfits_2x1{}'.format('_'+tf if tf != '' else '')
+    # Load an existing workspace for a given TF parameterization (e.g., 'htoaato4bfits_2x1_1x1')
+    #fitDir = 'htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else '')
+    fitDir = 'htoaato4bfits_{}'.format(sTrFcOrder)
     twoD = TwoDAlphabet(fitDir, '{}/runConfig.json'.format(fitDir), loadPrevious=True)
     # Creates a Combine card if not already existing (it should exist if you've already fitted this workspace)
-    if not os.path.exists(twoD.tag+'/'+'tW-{}_area/card.txt'.format(signal)):
-        print('{}/tW-{}_area/card.txt does not exist, making card'.format(twoD.tag,signal))
-        subset = twoD.ledger.select(_select_signal, 'signalLH{}'.format(signal), tf)
-        twoD.MakeCard(subset, 'tW-{}_area'.format(signal))
+    if not os.path.exists(twoD.tag+'/'+'htoaato4b-{}_area/card.txt'.format(signal)):
+        print('{}/htoaato4b-{}_area/card.txt does not exist, making card'.format(twoD.tag,signal))
+        subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal), tf)
+        twoD.MakeCard(subset, 'htoaato4b-{}_area'.format(signal))
 
     # Now run Combine's Goodness of Fit method, either on Combine or locally. 
     if condor == False:
         twoD.GoodnessOfFit(
-            'tW-{}_area'.format(signal), ntoys=nToys, freezeSignal=0,
+            'htoaato4b-{}_area'.format(signal), ntoys=nToys, freezeSignal=0,
             condor=False
         )
 	# Once finished, we can plot the results immediately from the output rootfile.
-	plot_GoF(signal, tf, condor)
+	plot_GoF(signal, tf, condor, sTrFcOrder)
     else:
 	# 500 (default) toys, split across 50 condor jobs
         twoD.GoodnessOfFit(
-            'tW-{}_area'.format(signal), ntoys=nToys, freezeSignal=0,
+            'htoaato4b-{}_area'.format(signal), ntoys=nToys, freezeSignal=0,
             condor=True, njobs=50
         )
 	# If submitting GoF jobs on condor, you must first wait for them to finish before plotting. 
 	print('Jobs successfully submitted - you can run plot_GoF after the jobs have finished running to plot results')
 
-def perform_limit(signal):
+def perform_limit(signal, sTrFcOrder = '2x1'):
     '''
     Perform a blinded limit. To be blinded, the Combine algorithm (via option `--run blind`)
     will create an Asimov toy dataset from the pre-fit model. Since the TF parameters are meaningless
@@ -228,10 +249,10 @@ def perform_limit(signal):
     something reasonable to create the Asimov toy.
     '''
     # Returns a dictionary of the TF parameters with the names as keys and the post-fit values as dict values.
-    twoD = TwoDAlphabet('tWfits_2x1', 'bstar.json', loadPrevious=True)
+    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1.json', loadPrevious=True)
 
     # GetParamsOnMatch() opens up the workspace's fitDiagnosticsTest.root and selects the rratio for the background
-    params_to_set = twoD.GetParamsOnMatch('rratio*', 'tW-{}_area'.format(signal), 'b')
+    params_to_set = twoD.GetParamsOnMatch('rratio*', 'htoaato4b-{}_area'.format(signal), 'b')
     params_to_set = {k:v['val'] for k,v in params_to_set.items()}
 
     # The iterWorkspaceObjs attribute stores the key-value pairs in the JSON config
@@ -256,24 +277,42 @@ def perform_limit(signal):
         )
 
 if __name__ == "__main__":
+    # Set environment using the following command:
+    # cd /afs/cern.ch/work/s/ssawant/private/DAS2023/exercise_BstarToTW/CMSSW_10_6_14/src && cmsenv && source twoD-env/bin/activate
+
+    parser = argparse.ArgumentParser(description='argument parser')
+    parser.add_argument('-transferFunctionOrder', dest='sTrFcOrder',   type=str, default='2x1',    choices=['1x0','0x1','1x1','1x2','2x1','2x2','2x3'], required=False)
+    args=parser.parse_args()
+
+    sTrFcOrder = args.sTrFcOrder
+    print("sTrFcOrder = {}".format(sTrFcOrder))
+    
     # Generate the 2DAlphabet workspace - this must be run once,
     # but need not be re-run after initial workspace creation 
     # unless you have changed something in the JSON config file.
-    make_workspace()
+    make_workspace(sTrFcOrder)
 
     # Signal masses can be appended to this list
-    for sig in ['2400']:
-        ML_fit(sig)		# Perform the maximum likelihood fit for a given signal mass
-        plot_fit(sig)		# Plot the postfit results, includinng nuisance pulls and 1D projections
-        perform_limit(sig)	# Calculate the limit
+    #for sig in ['2400']:
+    #for sig in ['20']:
+    #for sig in ['35']:
+    for sig in []:
+        print("main:: sig: ",sig)
+        ML_fit(sig, sTrFcOrder)		# Perform the maximum likelihood fit for a given signal mass
+        plot_fit(sig, sTrFcOrder)		# Plot the postfit results, includinng nuisance pulls and 1D projections
+        perform_limit(sig, sTrFcOrder)	# Calculate the limit
 
-	# Calculate the goodness of fit for a given fit.
-	# Params:
-	#	sig = signal mass
-	#	tf  = transfer function specifying fit directory. 
-	#	   tf='0x0' -> 'tWfits_2x1'
-	#	   tf=''    -> 'tWfits_2x1'
-	#	nToys = number of toys to generate. More toys gives better test statistic distribution,
-	#	        but will take longer if not using Condor.
-	#	condor = whether or not to ship jobs off to Condor. Kinda doesn't work well on LXPLUS
-	GoF(sig, tf='', nToys=10, condor=False)	
+        # Calculate the goodness of fit for a given fit.
+        # Params:
+        #	sig = signal mass
+        #	tf  = transfer function specifying fit directory. 
+        #	   tf='0x0' -> 'htoaato4bfits_2x1'
+        #	   tf=''    -> 'htoaato4bfits_2x1'
+        #	nToys = number of toys to generate. More toys gives better test statistic distribution,
+        #	        but will take longer if not using Condor.
+        #	condor = whether or not to ship jobs off to Condor. Kinda doesn't work well on LXPLUS
+        #GoF(sig, tf='', nToys=10, condor=False)
+        sTF_ = '' if sTrFcOrder == '2x1' else sTrFcOrder
+        GoF(sig, tf=sTF_, nToys=10, condor=False, sTrFcOrder=sTrFcOrder)	
+
+    

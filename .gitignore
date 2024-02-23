@@ -4,3 +4,8 @@ twoD-env/
 tWfits/
 *.pdf
 *.pyc
+cout_*.txt
+tWfits_*/
+htoaato4bfits_*/
+htoaato4b_1_0.json
+htoaato4b_1_0.py
