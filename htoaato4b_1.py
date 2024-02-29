@@ -295,8 +295,8 @@ if __name__ == "__main__":
     # Signal masses can be appended to this list
     #for sig in ['2400']:
     #for sig in ['20']:
-    #for sig in ['35']:
-    for sig in []:
+    for sig in ['35']:
+    #for sig in []:
         print("main:: sig: ",sig)
         ML_fit(sig, sTrFcOrder)		# Perform the maximum likelihood fit for a given signal mass
         plot_fit(sig, sTrFcOrder)		# Plot the postfit results, includinng nuisance pulls and 1D projections

@@ -5,8 +5,14 @@ from TwoDAlphabet.alphawrap import BinnedDistribution, ParametricFunction
 from TwoDAlphabet.helpers import make_env_tarball
 import ROOT
 import os
+import sys
 import numpy as np
 import argparse
+
+VERBOSE = True
+NTOY = 10     ## Number of toys for goodness-of-fit (GoF) test in last line of file
+FIT  = '2x2'  ## sTrFcOrder, i.e. fit type and order
+FITLIST = ['0x0','1x0','0x1','1x1','1x2','2x1','2x2']
 
 # for b*, the P/F regions are named MtwvMtPass and MtwvMtFail
 # so, just need to find and replace Pass/Fail depending on which region we want
@@ -49,7 +55,7 @@ def _select_signal(row, args):
     else:
         return True
 
-def make_workspace(sTrFcOrder = '1x1'):
+def make_workspace(sTrFcOrder = FIT):
     '''
     Constructs the workspace for all signals listed in the "SIGNAME" list in the 
     "GLOBAL" object in the json config file. This allows for one complete workspace to be
@@ -78,18 +84,18 @@ def make_workspace(sTrFcOrder = '1x1'):
       can be made up by a simple polynomial (line 118).
     '''
 
-    # open the smooth QCD MC file and gather the pass/fail histograms
-    smooth_MC_file = ROOT.TFile.Open('/eos/cms/store/user/ssawant/htoaa/analysis/20240131_GGFMode_DataVsMC/2018/2DAlphabet_inputFiles/QCD.root')
-    smooth_MC_fail = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Fail')
-    smooth_MC_pass = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Pass')
+    # # open the smooth QCD MC file and gather the pass/fail histograms
+    # smooth_MC_file = ROOT.TFile.Open('/eos/cms/store/user/ssawant/htoaa/analysis/20240131_GGFMode_DataVsMC/2018/2DAlphabet_inputFiles/QCD.root')
+    # smooth_MC_fail = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Fail')
+    # smooth_MC_pass = smooth_MC_file.Get('hLeadingFatJetParticleNet_massH_Hto4b_avg_vs_massA_Hto4b_avg_Pass')
 
-    ## Use flat pass / fail ratio from data: 4629 / 42059 = 0.110
-    smooth_MC_rpf = smooth_MC_pass.Clone()
-    for iX in range(smooth_MC_rpf.GetNbinsX()):
-        for iY in range(smooth_MC_rpf.GetNbinsY()):
-            #smooth_MC_rpf.SetBinContent(iX+1, iY+1, smooth_MC_pass.Integral() / smooth_MC_fail.Integral())
-            smooth_MC_rpf.SetBinContent(iX+1, iY+1, 0.110)
-            smooth_MC_rpf.SetBinError(iX+1, iY+1, 0.0330)
+    # ## Use flat pass / fail ratio from data: 4629 / 42059 = 0.110
+    # smooth_MC_rpf = smooth_MC_pass.Clone()
+    # for iX in range(smooth_MC_rpf.GetNbinsX()):
+    #     for iY in range(smooth_MC_rpf.GetNbinsY()):
+    #         #smooth_MC_rpf.SetBinContent(iX+1, iY+1, smooth_MC_pass.Integral() / smooth_MC_fail.Integral())
+    #         smooth_MC_rpf.SetBinContent(iX+1, iY+1, 0.110)
+    #         smooth_MC_rpf.SetBinError(iX+1, iY+1, 0.0330)
 
     # There are only 'Pass' and 'Fail' in twoD.ledger.GetRegions(),
     # since we only have a 'Pass' and a 'Fail' region in the input histos.
@@ -114,27 +120,45 @@ def make_workspace(sTrFcOrder = '1x1'):
                     binning_f, constant=False
                 )
 
-        # create a BinnedDistribution object corresponding to the smooth QCD MC P/F ratio created earlier (L.66)
-        qcd_MC_rpf = BinnedDistribution(
-                    'QCD_MC_rpf', smooth_MC_rpf,
-                    binning_f, constant=True
-                )
+        # # create a BinnedDistribution object corresponding to the smooth QCD MC P/F ratio created earlier (L.66)
+        # qcd_MC_rpf = BinnedDistribution(
+        #             'QCD_MC_rpf', smooth_MC_rpf,
+        #             binning_f, constant=True
+        #         )
 
+        ## 'x' is m(H), 'y' is m(a)
+        ## Both appear to be scaled to a range of [0, 1] or [-1, 1] or something like that
+        ## Need to find where this is done in the code - AWB 2024.02.28
         sFitPolynomial = ''
-        if     sTrFcOrder == '1x0':  sFitPolynomial = '@0+@1*x'
-        elif   sTrFcOrder == '0x1':  sFitPolynomial = '@0+@1*y'
-        elif   sTrFcOrder == '1x1':  sFitPolynomial = '(@0+@1*x)*(1+@2*y)'
-        elif   sTrFcOrder == '1x2':  sFitPolynomial = '(@0+@1*x)*(1+@2*y+@3*y*y)'
-        elif   sTrFcOrder == '2x1':  sFitPolynomial = '(@0+@1*x+@2*x**2)*(1+@3*y)'
-        elif   sTrFcOrder == '2x2':  sFitPolynomial = '(@0+@1*x+@2*x**2)*(1+@3*y+@4*y**2)'
-        elif   sTrFcOrder == '2x3':  sFitPolynomial = '(@0+@1*x+@2*x*x)*(1+@3*y+@4*y*y+@5*y*y*y)'
+        if     sTrFcOrder == '0x0':  sFitPolynomial = '@0'
+        elif   sTrFcOrder == '1x0':  sFitPolynomial = '@0*(1+@1*x)'
+        elif   sTrFcOrder == '0x1':  sFitPolynomial = '@0*(1+@1*y)'
+        elif   sTrFcOrder == '1x1':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y)'
+        elif   sTrFcOrder == '2x1':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y+@4*x*x+(@5+@4*@2)*x*x*y)'
+        elif   sTrFcOrder == '1x2':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y+@4*y*y+(@5+@4*@1)*x*y*y)'
+        elif   sTrFcOrder == '2x2':  sFitPolynomial = '@0*((1+@1*x+@4*x*x)*(1+@2*y+@5*y*y)+@3*x*y+@6*x*x*y+@7*x*y*y+@8*x*x*y*y)'
+        else:
+            print('\n\n*** ERROR! %s not in the list! Quitting. ***' % sTrFcOrder)
+            print(FITLIST)
+            sys.exit()
 
 
-        # Next we'll book a 1x1 transfer function to transfer from Fail -> Pass
+        # Next we'll book a FIT transfer function to transfer from Fail -> Pass
+        # Need to initialize each
         qcd_rratio = ParametricFunction(
                         fail_name.replace('Fail','rratio'),
                         binning_f, sFitPolynomial,
-                        constraints= {0:{"MIN":-10, "MAX":10}}
+                        constraints= {
+                            0:{"MIN":-20.0, "MAX":20.0, "NOM":0.11, "ERROR":10.0},
+                            1:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            2:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            3:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            4:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            5:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            6:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            7:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
+                            8:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0}
+                        }
                    )
 
         # We add it to `twoD` so its included when making the RooWorkspace and ledger.
@@ -145,14 +169,30 @@ def make_workspace(sTrFcOrder = '1x1'):
 
         # Finally, to actually get the qcd_p (pass) distribution, we need to multiply the fail distribution
         # by the QCD MC p/f ratio, and then multiply *that* by the simple polynomial, getting us finally from Fail->Pass
-        qcd_intermediate = qcd_f.Multiply(fail_name.replace('Fail','FailTimesMC'), qcd_MC_rpf)
-        qcd_p = qcd_intermediate.Multiply(fail_name.replace('Fail','Pass'), qcd_rratio)
+        #qcd_intermediate = qcd_f.Multiply(fail_name.replace('Fail','FailTimesMC'), qcd_MC_rpf)
+        #qcd_p = qcd_intermediate.Multiply(fail_name.replace('Fail','Pass'), qcd_rratio)
+        qcd_p = qcd_f.Multiply(fail_name.replace('Fail','Pass'), qcd_rratio)
+        if VERBOSE:
+            P_f,N_f = qcd_f.RooParametricHist(name='QCD_Fail')
+            #P_i,N_i = qcd_intermediate.RooParametricHist(name='QCD_FailTimesMC')
+            P_p,N_p = qcd_p.RooParametricHist(name='QCD_Pass')
+            print('\nFail: %.1f, %.1f, %.1f' % (P_f['LOW'].analyticalIntegral(1),
+                                                P_f['SIG'].analyticalIntegral(1),
+                                                P_f['HIGH'].analyticalIntegral(1)))
+            # print('x MC: %.1f, %.1f, %.1f' % (P_i['LOW'].analyticalIntegral(1),
+            #                                   P_i['SIG'].analyticalIntegral(1),
+            #                                   P_i['HIGH'].analyticalIntegral(1)))
+            print('Pass: %.1f, %.1f, %.1f' % (P_p['LOW'].analyticalIntegral(1),
+                                              P_p['SIG'].analyticalIntegral(1),
+                                              P_p['HIGH'].analyticalIntegral(1)))
+            #del P_f,N_f,P_i,N_i,P_p,N_p
+            del P_f,N_f,P_p,N_p
         twoD.AddAlphaObj('QCD', p, qcd_p, title='QCD')
 
     # save the workspace!
     twoD.Save()
 
-def ML_fit(signal, sTrFcOrder = '1x1'):
+def ML_fit(signal, sTrFcOrder = FIT):
     '''
     signal [str] = any of the signal masses, as a string. 
     Masses range from [1400,4000], at 200 GeV intervals
@@ -165,7 +205,7 @@ def ML_fit(signal, sTrFcOrder = '1x1'):
     '''
     print("ML_fit():: signal: ",signal)
 
-    # the default workspace directory, created in make_workspace(), is called htoaato4bfits_1x1/
+    # the default workspace directory, created in make_workspace(), is called htoaato4bfits_FIT/
     twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
 
     # Create a subset of the primary ledger using the select() method.
@@ -193,7 +233,7 @@ def ML_fit(signal, sTrFcOrder = '1x1'):
     # supplied (passed to the -d option of Combine).
     twoD.MLfit('htoaato4b-{}_area'.format(signal),rMin=-1,rMax=20,verbosity=1,extra='--robustFit=1')
 
-def plot_fit(signal, sTrFcOrder = '1x1'):
+def plot_fit(signal, sTrFcOrder = FIT):
     '''
     Plots the fits from ML_fit() using 2DAlphabet 
     '''
@@ -201,21 +241,20 @@ def plot_fit(signal, sTrFcOrder = '1x1'):
     subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
     twoD.StdPlots('htoaato4b-{}_area'.format(signal), subset)
 
-def plot_GoF(signal, tf='', condor=False, sTrFcOrder = '1x1'):
+def plot_GoF(signal, tf='', condor=False, sTrFcOrder = FIT):
     '''
     Plot the Goodness of Fit as the measured saturated test statistic in data 
     compared against the distribution obtained from the toys. 
     '''
-    # plot.plot_gof('tWfits_1x1{}'.format('_'+tf if tf != '' else ''), 'tW-{}_area'.format(signal), condor=condor)
     #plot.plot_gof('htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else ''), 'htoaato4b-{}_area'.format(signal), condor=condor)
     plot.plot_gof('htoaato4bfits_{}'.format(sTrFcOrder), 'htoaato4b-{}_area'.format(signal), condor=condor)
 
-def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = '1x1'):
+def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = FIT):
     '''
     Calculates the value of the saturated test statistic in data and compares to the 
     distribution obtained from 500 toys (by default).
     '''
-    # Load an existing workspace for a given TF parameterization (e.g., 'htoaato4bfits_1x1')
+    # Load an existing workspace for a given TF parameterization (e.g., 'htoaato4bfits_FIT')
     #fitDir = 'htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else '')
     fitDir = 'htoaato4bfits_{}'.format(sTrFcOrder)
     twoD = TwoDAlphabet(fitDir, '{}/runConfig.json'.format(fitDir), loadPrevious=True)
@@ -242,7 +281,7 @@ def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = '1x1'):
 	# If submitting GoF jobs on condor, you must first wait for them to finish before plotting. 
 	print('Jobs successfully submitted - you can run plot_GoF after the jobs have finished running to plot results')
 
-def perform_limit(signal, sTrFcOrder = '1x1'):
+def perform_limit(signal, sTrFcOrder = FIT):
     '''
     Perform a blinded limit. To be blinded, the Combine algorithm (via option `--run blind`)
     will create an Asimov toy dataset from the pre-fit model. Since the TF parameters are meaningless
@@ -282,7 +321,7 @@ if __name__ == "__main__":
     # cd /afs/cern.ch/work/s/ssawant/private/DAS2023/exercise_BstarToTW/CMSSW_10_6_14/src && cmsenv && source twoD-env/bin/activate
 
     parser = argparse.ArgumentParser(description='argument parser')
-    parser.add_argument('-transferFunctionOrder', dest='sTrFcOrder',   type=str, default='1x1',    choices=['1x0','0x1','1x1','1x2','2x1','2x2','2x3'], required=False)
+    parser.add_argument('-transferFunctionOrder', dest='sTrFcOrder', type=str, default=FIT, choices=FITLIST, required=False)
     args=parser.parse_args()
 
     sTrFcOrder = args.sTrFcOrder
@@ -307,13 +346,11 @@ if __name__ == "__main__":
         # Params:
         #	sig = signal mass
         #	tf  = transfer function specifying fit directory. 
-        #	   tf='0x0' -> 'htoaato4bfits_1x1'
-        #	   tf=''    -> 'htoaato4bfits_1x1'
+        #	   tf='0x0' -> 'htoaato4bfits_FIT'
+        #	   tf=''    -> 'htoaato4bfits_FIT'
         #	nToys = number of toys to generate. More toys gives better test statistic distribution,
         #	        but will take longer if not using Condor.
         #	condor = whether or not to ship jobs off to Condor. Kinda doesn't work well on LXPLUS
         #GoF(sig, tf='', nToys=10, condor=False)
-        sTF_ = '' if sTrFcOrder == '1x1' else sTrFcOrder
-        GoF(sig, tf=sTF_, nToys=10, condor=False, sTrFcOrder=sTrFcOrder)	
-
-    
+        sTF_ = '' if sTrFcOrder == FIT else sTrFcOrder
+        GoF(sig, tf=sTF_, nToys=NTOY, condor=False, sTrFcOrder=sTrFcOrder)

@@ -53,18 +53,18 @@
             "X": {
             "NAME": "mH",
             "TITLE": "m_{H} [GeV}",
-            "MIN": 0,
-            "MAX": 300,
-            "NBINS": 30,
+            "MIN": 70,
+            "MAX": 270,
+            "NBINS": 20,
             "SIGSTART": 100,
             "SIGEND": 140
             },
             "Y": {
             "NAME": "mA",
             "TITLE": "m_{A} [GeV]",
-            "MIN": 0,
-            "MAX": 70,
-            "NBINS": 35
+            "MIN": 10,
+            "MAX": 64,
+            "NBINS": 27
             }
         }
     },
