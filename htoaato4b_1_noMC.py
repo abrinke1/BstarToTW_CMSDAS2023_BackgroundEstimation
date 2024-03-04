@@ -10,9 +10,11 @@ import numpy as np
 import argparse
 
 VERBOSE = True
-NTOY = 10     ## Number of toys for goodness-of-fit (GoF) test in last line of file
-FIT  = '2x2'  ## sTrFcOrder, i.e. fit type and order
+NTOY  = 25      ## Number of toys for goodness-of-fit (GoF) test in last line of file
+FIT   = '2x2C'  ## sTrFcOrder, i.e. fit type and order
+MASSH = 'mass'  ## Higgs mass regression (mass, msoft, pnet)
 FITLIST = ['0x0','1x0','0x1','1x1','1x2','2x1','2x2']
+
 
 # for b*, the P/F regions are named MtwvMtPass and MtwvMtFail
 # so, just need to find and replace Pass/Fail depending on which region we want
@@ -68,7 +70,7 @@ def make_workspace(sTrFcOrder = FIT):
     # is also saved as runConfig.json. This means, if you want to share your analysis with
     # someone, they can grab everything they need from this one spot - no need to have access to
     # the original files! (Note though that you'd have to change the config to point to organized_hists.root).
-    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=False)
+    twoD = TwoDAlphabet('htoaato4bfits_%s_%s'%(MASSH,sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=False)
 
     # Create the data - BKGs histograms
     qcd_hists = twoD.InitQCDHists()
@@ -127,20 +129,52 @@ def make_workspace(sTrFcOrder = FIT):
         #         )
 
         ## 'x' is m(H), 'y' is m(a)
-        ## Both appear to be scaled to a range of [0, 1] or [-1, 1] or something like that
+        ## Both x and y appear to be scaled to a range of [0, 1] or something like that
         ## Need to find where this is done in the code - AWB 2024.02.28
         sFitPolynomial = ''
-        if     sTrFcOrder == '0x0':  sFitPolynomial = '@0'
-        elif   sTrFcOrder == '1x0':  sFitPolynomial = '@0*(1+@1*x)'
-        elif   sTrFcOrder == '0x1':  sFitPolynomial = '@0*(1+@1*y)'
-        elif   sTrFcOrder == '1x1':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y)'
-        elif   sTrFcOrder == '2x1':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y+@4*x*x+(@5+@4*@2)*x*x*y)'
-        elif   sTrFcOrder == '1x2':  sFitPolynomial = '@0*(1+@1*x+@2*y+(@3+@1*@2)*x*y+@4*y*y+(@5+@4*@1)*x*y*y)'
-        elif   sTrFcOrder == '2x2':  sFitPolynomial = '@0*((1+@1*x+@4*x*x)*(1+@2*y+@5*y*y)+@3*x*y+@6*x*x*y+@7*x*y*y+@8*x*x*y*y)'
+        if   sTrFcOrder.startswith('0x0'): sFitPolynomial = '@0'
+        elif sTrFcOrder.startswith('1x0'): sFitPolynomial = '@0*(1+@1*x)'
+        elif sTrFcOrder.startswith('0x1'): sFitPolynomial = '@0*(1+@1*y)'
+        elif sTrFcOrder.startswith('1x1'): sFitPolynomial = '@0*((1+@1*x)*(1+@2*y)+@3*x*y)'
+        elif sTrFcOrder.startswith('2x1'): sFitPolynomial = '@0*((1+@1*x+@4*x*x)*(1+@2*y)+@3*x*y+@5*x*x*y)'
+        elif sTrFcOrder.startswith('1x2'): sFitPolynomial = '@0*((1+@1*x)*(1+@2*y+@4*y*y)+@3*x*y+@5*x*y*y)'
+        elif sTrFcOrder.startswith('2x2'): sFitPolynomial = '@0*((1+@1*x+@4*x*x)*(1+@2*y+@5*y*y)+@3*x*y+@6*x*x*y+@7*x*y*y+@8*x*x*y*y)'
         else:
             print('\n\n*** ERROR! %s not in the list! Quitting. ***' % sTrFcOrder)
             print(FITLIST)
             sys.exit()
+
+        print('\nUsing fit function %s: %s' % (FIT, sFitPolynomial))
+        ## Variable replacements: "C" = central, "M" = mass ratio
+        ## "M" gives m(a)/m(H) for m(a) = [10,64], m(H) = [70,200] (60-200 for msoft)
+        if len(sTrFcOrder) > 3:
+            if sTrFcOrder.endswith('C'):
+                print('  * Replacing "x" with "x-0.5" in fit function')
+                sFitPolynomial = sFitPolynomial.replace('x','(x-0.5)')
+                if len(sTrFcOrder) == 4:
+                    print('  * Replacing "y" with "y-0.5" in fit function')
+                    sFitPolynomial = sFitPolynomial.replace('y','(y-0.5)')
+                elif sTrFcOrder[3] == 'M':
+                    if MASSH == 'msoft':
+                        print('  * Replacing "y" with "((y-(17/54))/(x+(60/140)))" in fit function')
+                        sFitPolynomial = sFitPolynomial.replace('y','((y-(17/54))/(x+(60/140)))')
+                    else:
+                        print('  * Replacing "y" with "((y-(17/54))/(x+(70/130)))" in fit function')
+                        sFitPolynomial = sFitPolynomial.replace('y','((y-(17/54))/(x+(70/130)))')
+                else:
+                    print('\n\n*** ERROR! Invalid fit function %s! Quitting. ***' % sTrFcOrder)
+                    sys.exit()
+            elif len(sTrFcOrder) == 4 and sTrFcOrder.endswith('M'):
+                if MASSH == 'msoft':
+                    print('  * Replacing "y" with "((y+(10/54))/(x+(60/140)))" in fit function')
+                    sFitPolynomial = sFitPolynomial.replace('y','((y+(10/54))/(x+(60/140)))')
+                else:
+                    print('  * Replacing "y" with "((y+(10/54))/(x+(70/130)))" in fit function')
+                    sFitPolynomial = sFitPolynomial.replace('y','((y+(10/54))/(x+(70/130)))')
+            else:
+                print('\n\n*** ERROR! Invalid fit function %s! Quitting. ***' % sTrFcOrder)
+                sys.exit()
+            print('Final form: %s\n' % (sFitPolynomial))
 
 
         # Next we'll book a FIT transfer function to transfer from Fail -> Pass
@@ -149,15 +183,15 @@ def make_workspace(sTrFcOrder = FIT):
                         fail_name.replace('Fail','rratio'),
                         binning_f, sFitPolynomial,
                         constraints= {
-                            0:{"MIN":-20.0, "MAX":20.0, "NOM":0.11, "ERROR":10.0},
-                            1:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            2:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            3:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            4:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            5:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            6:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            7:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0},
-                            8:{"MIN":-20.0, "MAX":20.0, "NOM":0.00, "ERROR":10.0}
+                            0:{"MIN":-50.0, "MAX":50.0, "NOM":0.11, "ERROR":20.0},
+                            1:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            2:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            3:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            4:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            5:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            6:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            7:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0},
+                            8:{"MIN":-50.0, "MAX":50.0, "NOM":0.00, "ERROR":20.0}
                         }
                    )
 
@@ -206,7 +240,7 @@ def ML_fit(signal, sTrFcOrder = FIT):
     print("ML_fit():: signal: ",signal)
 
     # the default workspace directory, created in make_workspace(), is called htoaato4bfits_FIT/
-    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
+    twoD = TwoDAlphabet('htoaato4bfits_%s_%s'%(MASSH,sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
 
     # Create a subset of the primary ledger using the select() method.
     # The select() method takes as a function as its first argument
@@ -237,7 +271,7 @@ def plot_fit(signal, sTrFcOrder = FIT):
     '''
     Plots the fits from ML_fit() using 2DAlphabet 
     '''
-    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
+    twoD = TwoDAlphabet('htoaato4bfits_%s_%s'%(MASSH,sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
     subset = twoD.ledger.select(_select_signal, 'SUSY_GluGluH_01J_HToAATo4B_M-{}_HPtAbv150'.format(signal))
     twoD.StdPlots('htoaato4b-{}_area'.format(signal), subset)
 
@@ -247,7 +281,7 @@ def plot_GoF(signal, tf='', condor=False, sTrFcOrder = FIT):
     compared against the distribution obtained from the toys. 
     '''
     #plot.plot_gof('htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else ''), 'htoaato4b-{}_area'.format(signal), condor=condor)
-    plot.plot_gof('htoaato4bfits_{}'.format(sTrFcOrder), 'htoaato4b-{}_area'.format(signal), condor=condor)
+    plot.plot_gof(('htoaato4bfits_%s_{}' % MASSH).format(sTrFcOrder), 'htoaato4b-{}_area'.format(signal), condor=condor)
 
 def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = FIT):
     '''
@@ -256,7 +290,7 @@ def GoF(signal, tf='', nToys=500, condor=False, sTrFcOrder = FIT):
     '''
     # Load an existing workspace for a given TF parameterization (e.g., 'htoaato4bfits_FIT')
     #fitDir = 'htoaato4bfits_{}{}'.format(sTrFcOrder, '_'+tf if tf != '' else '')
-    fitDir = 'htoaato4bfits_{}'.format(sTrFcOrder)
+    fitDir = ('htoaato4bfits_%s_{}' % MASSH).format(sTrFcOrder)
     twoD = TwoDAlphabet(fitDir, '{}/runConfig.json'.format(fitDir), loadPrevious=True)
     # Creates a Combine card if not already existing (it should exist if you've already fitted this workspace)
     if not os.path.exists(twoD.tag+'/'+'htoaato4b-{}_area/card.txt'.format(signal)):
@@ -289,7 +323,7 @@ def perform_limit(signal, sTrFcOrder = FIT):
     something reasonable to create the Asimov toy.
     '''
     # Returns a dictionary of the TF parameters with the names as keys and the post-fit values as dict values.
-    twoD = TwoDAlphabet('htoaato4bfits_%s'%(sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
+    twoD = TwoDAlphabet('htoaato4bfits_%s_%s'%(MASSH,sTrFcOrder), 'htoaato4b_1_noMC.json', loadPrevious=True)
 
     # GetParamsOnMatch() opens up the workspace's fitDiagnosticsTest.root and selects the rratio for the background
     params_to_set = twoD.GetParamsOnMatch('rratio*', 'htoaato4b-{}_area'.format(signal), 'b')
